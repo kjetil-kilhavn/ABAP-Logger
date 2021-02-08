@@ -76,9 +76,9 @@ class zcl_logger definition
 
 *"* private components of class ZCL_LOGGER
 *"* do not include other source files here!!!
-    data  sec_connection           type abap_bool .
-    data  sec_connect_commit       type abap_bool .
-    data  settings                 type ref to zif_logger_settings.
+    data sec_connection     type abap_bool .
+    data sec_connect_commit type abap_bool .
+    data settings           type ref to zif_logger_settings.
 
     methods:
       "! Safety limit for previous exception drill down
@@ -102,9 +102,8 @@ class zcl_logger definition
 
     methods get_structure_fields
       importing
-        !data_structure type ref to cl_abap_structdescr
-      changing
-        !structure_fields type cl_abap_tabledescr=>component_table.
+                data_structure type ref to cl_abap_structdescr
+      returning value(result)  type cl_abap_structdescr=>component_table.
 
     methods save_log.
 endclass.
@@ -121,7 +120,7 @@ class zcl_logger implementation.
 
     field-symbols <ex> like line of exceptions.
     append initial line to exceptions assigning <ex>.
-    <ex>-level = 1.
+    <ex>-level     = 1.
     <ex>-exception = exception.
 
     previous_exception = exception.
@@ -134,9 +133,9 @@ class zcl_logger implementation.
       previous_exception ?= previous_exception->previous.
 
       append initial line to exceptions assigning <ex>.
-      <ex>-level = i.
+      <ex>-level     = i.
       <ex>-exception = previous_exception.
-      i = i + 1.
+      i              = i + 1.
     endwhile.
 
     field-symbols <ret> like line of rt_exception_data_table.
@@ -376,19 +375,8 @@ class zcl_logger implementation.
       loop at <table_of_messages> assigning <message_line>.
         add( <message_line> ).
       endloop.
-    elseif msg_type->type_kind = cl_abap_typedescr=>typekind_struct1   "flat structure
-        or msg_type->type_kind = cl_abap_typedescr=>typekind_struct2.  "deep structure (already when string is used)
-      free_text_msg = msg_type->absolute_name.
-      shift free_text_msg left deleting leading '\TYPE='.
-      concatenate '--- Structure' free_text_msg into free_text_msg separated by space.
-      add( obj_to_log    = free_text_msg
-           context       = context
-           callback_form = callback_form
-           callback_prog = callback_prog
-           callback_fm   = callback_fm
-           type          = type
-           importance    = importance ).
-      clear free_text_msg.
+    elseif msg_type->type_kind = cl_abap_typedescr=>typekind_struct1         "flat structure
+        or msg_type->type_kind = cl_abap_typedescr=>typekind_struct2.        "deep structure (already when string is used)
       add_structure( obj_to_log ).
     else.
       free_text_msg = obj_to_log.
@@ -429,22 +417,28 @@ class zcl_logger implementation.
 
 
   method add_structure.
-    data: structure_descriptor type ref to cl_abap_structdescr,
-          components type cl_abap_structdescr=>component_table,
-          component like line of components.
-    field-symbols: <component> type any.
+    data structure_descriptor type ref to cl_abap_structdescr.
+    data components           type cl_abap_structdescr=>component_table.
+    data component            like line of components.
+    field-symbols <component> type any.
 
     structure_descriptor ?= cl_abap_structdescr=>describe_by_data( structure_to_log ).
-    get_structure_fields( exporting data_structure   = structure_descriptor
-                          changing  structure_fields = components  ).
+    components = get_structure_fields( structure_descriptor ).
+
+    add( '--- Begin of structure ---' ).
     loop at components into component.
-      check component-type->kind = cl_abap_typedescr=>kind_elem.
       assign component sy-tabix of structure structure_to_log to <component>.
       if sy-subrc = 0.
-        add( obj_to_log = |-{ to_lower( component-name ) } = { <component> }|
-             importance = '4' ).
+        case component-type->kind.
+          when cl_abap_typedescr=>kind_elem.
+            add( obj_to_log = |{ to_lower( component-name ) } = { <component> }|
+                 importance = '4' ).
+          when cl_abap_typedescr=>kind_struct.
+            add_structure( <component> ).
+        endcase.
       endif.
     endloop.
+    add( '--- End of structure ---' ).
   endmethod.
 
 
@@ -504,8 +498,8 @@ class zcl_logger implementation.
   method fullscreen.
 
     data:
-      profile        type bal_s_prof,
-      lt_log_handles type bal_t_logh.
+          profile        type bal_s_prof,
+          lt_log_handles type bal_t_logh.
 
     append me->handle to lt_log_handles.
 
@@ -565,8 +559,8 @@ class zcl_logger implementation.
 * See SBAL_DEMO_04_POPUP for ideas
 
     data:
-      profile        type bal_s_prof,
-      lt_log_handles type bal_t_logh.
+          profile        type bal_s_prof,
+          lt_log_handles type bal_t_logh.
 
     append me->handle to lt_log_handles.
 
@@ -611,28 +605,27 @@ class zcl_logger implementation.
       importance    = importance ).
   endmethod.
 
-  
+
   method get_structure_fields.
     data structure_components type cl_abap_structdescr=>component_table.
-    data structure_component like line of structure_components.
-    data substructure type ref to cl_abap_structdescr.
+    data structure_component  like line of structure_components.
+    data substructure         type ref to cl_abap_structdescr.
 
     structure_components = data_structure->get_components( ).
     loop at structure_components into structure_component.
-      if structure_component-as_include = 'X'.
+      if structure_component-as_include = abap_true.
         substructure ?= structure_component-type.
-        get_structure_fields( exporting data_structure   = substructure
-                              changing  structure_fields = structure_fields ).
+        result = get_structure_fields( substructure ).
       else.
-        append structure_component to structure_fields.
+        append structure_component to result.
       endif.
     endloop.
+  endmethod.
 
-  
   method save_log.
     data log_handles type bal_t_logh.
     data log_numbers type bal_t_lgnm.
-    data log_number type bal_s_lgnm.
+    data log_number  type bal_s_lgnm.
 
     insert me->handle into table log_handles.
     call function 'BAL_DB_SAVE'
